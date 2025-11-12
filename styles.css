@@ -1,0 +1,80 @@
+/* 基本レイアウト */
+body {
+  font-family: "Noto Sans JP", system-ui;
+  background: #0b1020;
+  color: #f5f7ff;
+  margin: max(2vw, 24px);
+}
+header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+h1 { font-size: clamp(22px, 3vw, 34px); margin: 0; font-weight: 700; }
+.subtitle { font-size: 1.1rem; opacity: .85; color: #cbd5e1; margin: 0; }
+.meta { opacity: .75; }
+
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+.card {
+  grid-column: span 4;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 16px;
+  padding: 20px;
+}
+.value { font-size: clamp(28px, 6vw, 48px); font-weight: 800; }
+
+.panel {
+  grid-column: span 12;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+/* ツールバー */
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+button {
+  background: #1e293b; color: #e6ecff; border: none; border-radius: 8px;
+  padding: 6px 14px; cursor: pointer; font-weight: 600;
+}
+button.active { background: #2563eb; color: #fff; }
+select {
+  background: #0f172a; color: #e6ecff; border: 1px solid rgba(255,255,255,.2);
+  border-radius: 8px; padding: 6px 10px;
+}
+
+/* 折れ線・棒のキャンバス領域（固定高） */
+.chart-wrap { position: relative; height: 360px; width: 100%; overflow: hidden; }
+#chart { display: block; width: 100% !important; height: 100% !important; }
+
+/* 円グラフ3枚のレイアウト */
+.pies { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.pie-card {
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 16px;
+  padding: 12px 12px 8px;
+}
+.pie-title { font-weight: 700; margin: 0 0 4px 2px; font-size: 0.95rem; opacity: .9; }
+.pie-canvas { position: relative; height: 220px; }
+.pie-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+
+@media (max-width: 900px) {
+  .pies { grid-template-columns: 1fr; }
+  .pie-canvas { height: 260px; }
+}
+
+/* キャンバス外の凡例（固定） */
+.legend { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0 4px 0; }
+.legend .key {
+  display: inline-flex; gap: 8px; align-items: center;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 999px;
+  padding: 6px 10px;
+}
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.cloud { background: #3b82f6; }
+.dot.zt    { background: #10b981; }
+.dot.inc   { background: #ef4444; }
+.dot.rest  { background: #64748b; }
+
+/* フッター */
+footer { opacity: .7; margin-top: 24px; font-size: .9rem; text-align: left; }
