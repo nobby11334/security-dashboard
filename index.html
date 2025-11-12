@@ -6,25 +6,19 @@
   <title>日本企業のセキュリティ実態ダッシュボード</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: "Noto Sans JP", system-ui;
-      background:#0b1020; color:#f5f7ff;
-      margin: max(2vw,24px);
-    }
-    header {display:flex; justify-content:space-between; flex-wrap:wrap; align-items:baseline;}
-    h1 {font-size:clamp(20px,3vw,32px); margin:0;}
-    .meta {opacity:.75;}
-    .grid {display:grid; gap:16px; grid-template-columns:repeat(12,1fr);}
-    .card {grid-column:span 4; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); border-radius:16px; padding:20px;}
-    .value {font-size:clamp(28px,6vw,48px); font-weight:800;}
-    .panel {grid-column:span 12; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:20px;}
-    footer {opacity:.7; margin-top:24px; font-size:.9rem;}
-    button {
-      background:#1e293b; color:#e6ecff; border:none; border-radius:8px;
-      padding:6px 14px; margin-right:6px; cursor:pointer;
-      font-weight:600;
-    }
-    button.active {background:#2563eb; color:#fff;}
+    body { font-family: "Noto Sans JP", system-ui; background:#0b1020; color:#f5f7ff; margin:max(2vw,24px); }
+    header { display:flex; justify-content:space-between; flex-wrap:wrap; align-items:baseline; }
+    h1 { font-size:clamp(20px,3vw,32px); margin:0; }
+    .meta { opacity:.75; }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(12,1fr); }
+    .card { grid-column:span 4; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); border-radius:16px; padding:20px; }
+    .value { font-size:clamp(28px,6vw,48px); font-weight:800; }
+    .panel { grid-column:span 12; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:20px; }
+    footer { opacity:.7; margin-top:24px; font-size:.9rem; }
+    .toolbar { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+    button { background:#1e293b; color:#e6ecff; border:none; border-radius:8px; padding:6px 14px; cursor:pointer; font-weight:600; }
+    button.active { background:#2563eb; color:#fff; }
+    select { background:#0f172a; color:#e6ecff; border:1px solid rgba(255,255,255,.2); border-radius:8px; padding:6px 10px; }
   </style>
 </head>
 <body>
@@ -40,100 +34,141 @@
 </section>
 
 <section class="panel">
-  <h2 style="margin-top:0">年度トレンド</h2>
-  <div style="margin-bottom:10px;">
+  <h2 style="margin-top:0">可視化</h2>
+  <div class="toolbar">
     <button id="btnLine" class="active">折れ線</button>
     <button id="btnBar">棒</button>
-    <button id="btnPie">円</button>
+    <button id="btnPie">円（年度スナップショット）</button>
+
+    <label for="yearSelect" style="margin-left:8px;">年度:</label>
+    <select id="yearSelect" disabled></select>
   </div>
-  <canvas id="chart" height="300"></canvas>
+  <canvas id="chart" height="320"></canvas>
 </section>
 
 <footer>
   出典：総務省（通信利用動向調査） / IPA / NRI Secure<br/>
-  表示値は Google スプレッドシート（gid固定）から取得しています。
+  表示値は Google スプレッドシート（gid固定）から都度取得しています。
 </footer>
 
 <script>
+/* ▼▼ 必要箇所だけご調整 ▼▼ */
 const SPREADSHEET_ID = "1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
-const KPI_GID = 0;
-const TREND_GID = 709246046;
+const KPI_GID   = 0;          // KPI
+const TREND_GID = 709246046;  // Trend
+/* ▲▲ ここまで ▲▲ */
 
-let chart; // グローバル参照
+let chart;
+let years=[], cloud=[], zt=[], inc=[];
+const yearSelect = document.getElementById("yearSelect");
 
-// ---------- 共通関数 ----------
 const csvUrl = gid => `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
 async function fetchCsv(url){
   const res = await fetch(url,{cache:"no-store"}); const text=await res.text();
   return text.trim().split(/\r?\n/).map(r=>r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));
 }
-function toPct(v){const n=Number(v); if(isNaN(n))return "—%"; const val=n<=1?n*100:n; return Math.round(val*10)/10+"%";}
-function setLastUpdated(){const d=new Date();const z=n=>String(n).padStart(2,"0");document.getElementById("lastUpdated").textContent=`最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;}
+function toPct(v){ const n=Number(v); if(isNaN(n))return "—%"; const val=n<=1?n*100:n; return Math.round(val*10)/10+"%"; }
+function norm(arr){ return arr.map(v => (Number(v)<=1 ? Number(v)*100 : Number(v))); }
+function setLastUpdated(){ const d=new Date(); const z=n=>String(n).padStart(2,"0");
+  document.getElementById("lastUpdated").textContent=`最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+}
 
-// ---------- KPI ----------
+/* KPI */
 async function loadKpi(){
   const rows = await fetchCsv(csvUrl(KPI_GID));
   for(let i=1;i<rows.length;i++){
-    const name = (rows[i][0]||"").toLowerCase(); const val=rows[i][1];
-    if(name.includes("cloud")) document.getElementById("cloudVal").textContent=toPct(val);
-    else if(name.includes("zero")||name.includes("zt")) document.getElementById("ztVal").textContent=toPct(val);
-    else if(name.includes("incident")||name.includes("被害")) document.getElementById("incVal").textContent=toPct(val);
+    const name=(rows[i][0]||"").toLowerCase(); const val=rows[i][1];
+    if(name.includes("cloud")||name.includes("クラウド")) document.getElementById("cloudVal").textContent=toPct(val);
+    else if(name.includes("zero")||name.includes("zt")||name.includes("ゼロ")) document.getElementById("ztVal").textContent=toPct(val);
+    else if(name.includes("incident")||name.includes("被害")||name.includes("インシデント")) document.getElementById("incVal").textContent=toPct(val);
   }
 }
 
-// ---------- グラフ ----------
-async function loadChart(type="line"){
+/* Trend（全年度） */
+async function loadTrend(){
   const rows = await fetchCsv(csvUrl(TREND_GID));
-  const years=[],cloud=[],zt=[],inc=[];
+  years=[]; cloud=[]; zt=[]; inc=[];
   for(let i=1;i<rows.length;i++){
-    if(!rows[i][0])continue;
+    if(!rows[i][0]) continue;
     years.push(rows[i][0]);
     cloud.push(Number(rows[i][1]||0));
     zt.push(Number(rows[i][2]||0));
     inc.push(Number(rows[i][3]||0));
   }
-  const norm=a=>a.map(v=>v<=1?v*100:v);
-
-  const data = {
-    labels: years,
-    datasets: [
-      {label:"クラウド普及率", data:norm(cloud), borderWidth:2, tension:.3},
-      {label:"ゼロトラスト導入率", data:norm(zt), borderWidth:2, tension:.3},
-      {label:"インシデント経験企業割合", data:norm(inc), borderWidth:2, tension:.3}
-    ]
-  };
-
-  if(chart) chart.destroy();
-  chart = new Chart(document.getElementById("chart"), {
-    type,
-    data,
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      scales:type==="pie"?{}:{y:{min:0,max:100,ticks:{stepSize:20}}},
-      plugins:{legend:{labels:{color:"#e6ecff"}}}
-    }
+  // 年度プルダウンを最新年選択でセット
+  yearSelect.innerHTML = "";
+  years.forEach(y=>{
+    const opt=document.createElement("option");
+    opt.value=y; opt.textContent=y;
+    yearSelect.appendChild(opt);
   });
+  yearSelect.value = years[years.length-1]; // 最新を既定
 }
 
-// ---------- 切り替え ----------
-function setupButtons(){
-  const types={btnLine:"line",btnBar:"bar",btnPie:"pie"};
-  for(const [id,type] of Object.entries(types)){
-    document.getElementById(id).addEventListener("click",()=>{
-      document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
-      document.getElementById(id).classList.add("active");
-      loadChart(type);
+/* 描画 */
+function renderChart(type="line"){
+  if(chart) chart.destroy();
+
+  if(type==="pie"){
+    // 選択年度のスナップショット
+    const y = yearSelect.value;
+    const idx = years.indexOf(y);
+    const dataY = [
+      (idx>-1 ? cloud[idx] : 0),
+      (idx>-1 ? zt[idx]    : 0),
+      (idx>-1 ? inc[idx]   : 0),
+    ];
+    chart = new Chart(document.getElementById("chart"), {
+      type: "pie",
+      data: { labels:["クラウド普及率","ゼロトラスト導入率","インシデント経験企業割合"], datasets:[{ data: norm(dataY) }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{ color:"#e6ecff" } } } }
     });
+    yearSelect.disabled = false; // 円のときだけ年度選択を有効化
+  }else{
+    // 推移グラフ
+    chart = new Chart(document.getElementById("chart"), {
+      type,
+      data: {
+        labels: years,
+        datasets: [
+          { label:"クラウド普及率", data:norm(cloud), borderWidth:2, tension:.3 },
+          { label:"ゼロトラスト導入率", data:norm(zt), borderWidth:2, tension:.3 },
+          { label:"インシデント経験企業割合", data:norm(inc), borderWidth:2, tension:.3 }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales:{ y:{ min:0, max:100, ticks:{ stepSize:20 } } },
+        plugins:{ legend:{ labels:{ color:"#e6ecff" } } }
+      }
+    });
+    yearSelect.disabled = true; // 折れ線・棒のときは無効
   }
 }
 
-// ---------- 初期化 ----------
+/* ボタン・イベント */
+function setupUI(){
+  const buttons = { btnLine:"line", btnBar:"bar", btnPie:"pie" };
+  Object.entries(buttons).forEach(([id,type])=>{
+    document.getElementById(id).addEventListener("click", ()=>{
+      document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+      renderChart(type);
+    });
+  });
+  yearSelect.addEventListener("change", ()=>{
+    // 円グラフ表示中のみ再描画
+    if(document.getElementById("btnPie").classList.contains("active")) renderChart("pie");
+  });
+}
+
+/* 初期化 */
 (async function init(){
   setLastUpdated();
   await loadKpi();
-  setupButtons();
-  await loadChart("line");
+  await loadTrend();
+  setupUI();
+  renderChart("line"); // 既定は折れ線
 })();
 </script>
 </body>
