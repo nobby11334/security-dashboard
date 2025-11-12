@@ -6,174 +6,134 @@
   <title>日本企業のセキュリティ実態ダッシュボード</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    :root { --gap: 16px; }
     body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN",
-                   "Noto Sans JP", "Yu Gothic UI", sans-serif;
+      font-family: "Noto Sans JP", system-ui;
+      background:#0b1020; color:#f5f7ff;
       margin: max(2vw,24px);
-      background:#0b1020;
-      color:#f5f7ff;
     }
-    header { display:flex; flex-wrap:wrap; gap: var(--gap); align-items:baseline; justify-content:space-between; }
-    h1 { font-size: clamp(20px, 3vw, 32px); margin:0; letter-spacing:.02em; }
-    .meta { opacity:.75; }
-    .grid { display:grid; gap: var(--gap); grid-template-columns: repeat(12, 1fr); }
-    .card {
-      grid-column: span 4;
-      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-      border:1px solid rgba(255,255,255,.1);
-      border-radius: 16px;
-      padding: 20px;
-      box-shadow: 0 8px 30px rgba(0,0,0,.25);
+    header {display:flex; justify-content:space-between; flex-wrap:wrap; align-items:baseline;}
+    h1 {font-size:clamp(20px,3vw,32px); margin:0;}
+    .meta {opacity:.75;}
+    .grid {display:grid; gap:16px; grid-template-columns:repeat(12,1fr);}
+    .card {grid-column:span 4; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); border-radius:16px; padding:20px;}
+    .value {font-size:clamp(28px,6vw,48px); font-weight:800;}
+    .panel {grid-column:span 12; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:20px;}
+    footer {opacity:.7; margin-top:24px; font-size:.9rem;}
+    button {
+      background:#1e293b; color:#e6ecff; border:none; border-radius:8px;
+      padding:6px 14px; margin-right:6px; cursor:pointer;
+      font-weight:600;
     }
-    .kpi { display:flex; align-items:baseline; gap:8px; }
-    .kpi .value { font-size: clamp(28px, 6vw, 48px); font-weight:800; line-height:1; }
-    .kpi small { opacity:.85; }
-    .panel {
-      grid-column: span 12;
-      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-      border:1px solid rgba(255,255,255,.08);
-      border-radius: 16px;
-      padding: 20px;
-      height: 420px;
-    }
-    a { color:#9bd2ff; }
-    footer { margin-top: 24px; opacity:.75; font-size:.9rem; }
-    @media (max-width: 900px){ .card{ grid-column: span 12; } .panel{ height: 360px; } }
+    button.active {background:#2563eb; color:#fff;}
   </style>
 </head>
 <body>
-  <header>
-    <h1>日本企業のセキュリティ実態ダッシュボード</h1>
-    <div class="meta" id="lastUpdated">最終更新: —</div>
-  </header>
+<header>
+  <h1>日本企業のセキュリティ実態ダッシュボード</h1>
+  <div class="meta" id="lastUpdated">最終更新: —</div>
+</header>
 
-  <section class="grid" id="kpiRow">
-    <div class="card" id="kpiCloud">
-      <div class="kpi">
-        <div class="value" id="cloudVal">—%</div>
-      </div>
-      <small>クラウド普及率</small>
-    </div>
-    <div class="card" id="kpiZeroTrust">
-      <div class="kpi">
-        <div class="value" id="ztVal">—%</div>
-      </div>
-      <small>ゼロトラスト導入率</small>
-    </div>
-    <div class="card" id="kpiIncident">
-      <div class="kpi">
-        <div class="value" id="incVal">—%</div>
-      </div>
-      <small>インシデント経験企業割合</small>
-    </div>
-  </section>
+<section class="grid">
+  <div class="card"><div class="value" id="cloudVal">—%</div><small>クラウド普及率</small></div>
+  <div class="card"><div class="value" id="ztVal">—%</div><small>ゼロトラスト導入率</small></div>
+  <div class="card"><div class="value" id="incVal">—%</div><small>インシデント経験企業割合</small></div>
+</section>
 
-  <section class="panel">
-    <h2 style="margin-top:0">年度トレンド</h2>
-    <canvas id="trendChart" height="260"></canvas>
-  </section>
+<section class="panel">
+  <h2 style="margin-top:0">年度トレンド</h2>
+  <div style="margin-bottom:10px;">
+    <button id="btnLine" class="active">折れ線</button>
+    <button id="btnBar">棒</button>
+    <button id="btnPie">円</button>
+  </div>
+  <canvas id="chart" height="300"></canvas>
+</section>
 
-  <footer>
-    出典：総務省（通信利用動向調査） / IPA（中小企業における情報セキュリティ実態調査） / NRI Secure ほか<br/>
-    表示値は Google スプレッドシートの公開CSV（gid固定）から毎回取得します。
-  </footer>
+<footer>
+  出典：総務省（通信利用動向調査） / IPA / NRI Secure<br/>
+  表示値は Google スプレッドシート（gid固定）から取得しています。
+</footer>
 
 <script>
-/** ▼▼▼ 必要箇所だけ編集ください ▼▼▼ **/
 const SPREADSHEET_ID = "1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
-// KPI = gid:0、Trend = gid:709246046
-const KPI_GID   = 0;
+const KPI_GID = 0;
 const TREND_GID = 709246046;
-/** ▲▲▲ 編集ここまで ▲▲▲ **/
 
-// CSVエンドポイント（gid指定）
-function exportCsvUrl(gid){
-  return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
-}
+let chart; // グローバル参照
 
-// CSV→2次元配列
+// ---------- 共通関数 ----------
+const csvUrl = gid => `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
 async function fetchCsv(url){
-  const res = await fetch(url, { cache: "no-store" });
-  if(!res.ok) throw new Error("Failed to fetch: " + url);
-  const text = await res.text();
-  return text.trim().split(/\r?\n/).map(r =>
-    r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, ""))
-  );
+  const res = await fetch(url,{cache:"no-store"}); const text=await res.text();
+  return text.trim().split(/\r?\n/).map(r=>r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));
 }
+function toPct(v){const n=Number(v); if(isNaN(n))return "—%"; const val=n<=1?n*100:n; return Math.round(val*10)/10+"%";}
+function setLastUpdated(){const d=new Date();const z=n=>String(n).padStart(2,"0");document.getElementById("lastUpdated").textContent=`最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;}
 
-// 0〜1 or 0〜100 → “xx.x%”
-function toPct(v){
-  const num = Number(v);
-  if(Number.isNaN(num)) return "—%";
-  const val = num <= 1 ? num * 100 : num;
-  return Math.round(val * 10) / 10 + "%";
-}
-
-// 最終更新の表示
-function setLastUpdated(){
-  const d = new Date();
-  const z = (n)=>String(n).padStart(2,"0");
-  document.getElementById("lastUpdated").textContent =
-    `最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
-}
-
-// KPIの読み込み：KPI（gid=0）想定：A=Name, B=Value（0〜1 または 0〜100）
-async function loadKpis(){
-  const rows = await fetchCsv(exportCsvUrl(KPI_GID));
-  // 1行目はヘッダー想定
+// ---------- KPI ----------
+async function loadKpi(){
+  const rows = await fetchCsv(csvUrl(KPI_GID));
   for(let i=1;i<rows.length;i++){
-    const name = (rows[i][0]||"").toLowerCase();
-    const val  = rows[i][1];
-    if(name.includes("cloud") || name.includes("クラウド")){
-      document.getElementById("cloudVal").textContent = toPct(val);
-    }else if(name.includes("zero") || name.includes("zt") || name.includes("ゼロ")){
-      document.getElementById("ztVal").textContent = toPct(val);
-    }else if(name.includes("incident") || name.includes("被害") || name.includes("インシデント")){
-      document.getElementById("incVal").textContent = toPct(val);
-    }
+    const name = (rows[i][0]||"").toLowerCase(); const val=rows[i][1];
+    if(name.includes("cloud")) document.getElementById("cloudVal").textContent=toPct(val);
+    else if(name.includes("zero")||name.includes("zt")) document.getElementById("ztVal").textContent=toPct(val);
+    else if(name.includes("incident")||name.includes("被害")) document.getElementById("incVal").textContent=toPct(val);
   }
 }
 
-// Trendの読み込み：Trend（gid=709246046）
-// ヘッダー: Year, Cloud, ZeroTrust, Incident（値は 0〜1 or 0〜100）
-async function loadTrend(){
-  const rows = await fetchCsv(exportCsvUrl(TREND_GID));
-  const years=[], cloud=[], zt=[], inc=[];
+// ---------- グラフ ----------
+async function loadChart(type="line"){
+  const rows = await fetchCsv(csvUrl(TREND_GID));
+  const years=[],cloud=[],zt=[],inc=[];
   for(let i=1;i<rows.length;i++){
-    if(!rows[i][0]) continue;
+    if(!rows[i][0])continue;
     years.push(rows[i][0]);
     cloud.push(Number(rows[i][1]||0));
     zt.push(Number(rows[i][2]||0));
     inc.push(Number(rows[i][3]||0));
   }
-  const norm = a => a.map(v => (v<=1? v*100 : v));
+  const norm=a=>a.map(v=>v<=1?v*100:v);
 
-  const ctx = document.getElementById("trendChart");
-  new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: years,
-      datasets: [
-        { label:"クラウド普及率", data:norm(cloud), borderWidth:2, tension:.3 },
-        { label:"ゼロトラスト導入率", data:norm(zt),    borderWidth:2, tension:.3 },
-        { label:"インシデント経験企業割合", data:norm(inc),  borderWidth:2, tension:.3 },
-      ]
-    },
-    options: {
+  const data = {
+    labels: years,
+    datasets: [
+      {label:"クラウド普及率", data:norm(cloud), borderWidth:2, tension:.3},
+      {label:"ゼロトラスト導入率", data:norm(zt), borderWidth:2, tension:.3},
+      {label:"インシデント経験企業割合", data:norm(inc), borderWidth:2, tension:.3}
+    ]
+  };
+
+  if(chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type,
+    data,
+    options:{
       responsive:true,
       maintainAspectRatio:false,
-      scales:{ y:{ min:0, max:100, ticks:{ stepSize:20 }, grid:{ color:"rgba(230,236,255,.12)" } },
-               x:{ grid:{ color:"rgba(230,236,255,.08)" } } },
-      plugins:{ legend:{ labels:{ color:"#e6ecff" } } },
-      elements:{ point:{ radius:3 } }
+      scales:type==="pie"?{}:{y:{min:0,max:100,ticks:{stepSize:20}}},
+      plugins:{legend:{labels:{color:"#e6ecff"}}}
     }
   });
 }
 
+// ---------- 切り替え ----------
+function setupButtons(){
+  const types={btnLine:"line",btnBar:"bar",btnPie:"pie"};
+  for(const [id,type] of Object.entries(types)){
+    document.getElementById(id).addEventListener("click",()=>{
+      document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+      loadChart(type);
+    });
+  }
+}
+
+// ---------- 初期化 ----------
 (async function init(){
   setLastUpdated();
-  await Promise.all([loadKpis(), loadTrend()]);
+  await loadKpi();
+  setupButtons();
+  await loadChart("line");
 })();
 </script>
 </body>
