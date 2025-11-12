@@ -6,21 +6,29 @@
 <title>日本企業のセキュリティ実態ダッシュボード</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body{font-family:"Noto Sans JP",system-ui;background:#0b1020;color:#f5f7ff;margin:max(2vw,24px);}
-header{display:flex;justify-content:space-between;flex-wrap:wrap;align-items:baseline;}
-h1{font-size:clamp(20px,3vw,32px);margin:0;}
-.meta{opacity:.75;}
-.grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr);}
-.card{grid-column:span 4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:20px;}
-.value{font-size:clamp(28px,6vw,48px);font-weight:800;}
-.panel{grid-column:span 12;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:20px;}
-.chart-wrap{position:relative;height:360px;width:100%;}
-#chart{display:block;width:100%!important;height:100%!important;}
-footer{opacity:.7;margin-top:24px;font-size:.9rem;}
-.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
-button{background:#1e293b;color:#e6ecff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;}
-button.active{background:#2563eb;color:#fff;}
-select{background:#0f172a;color:#e6ecff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 10px;}
+  body{font-family:"Noto Sans JP",system-ui;background:#0b1020;color:#f5f7ff;margin:max(2vw,24px);}
+  header{display:flex;justify-content:space-between;flex-wrap:wrap;align-items:baseline;}
+  h1{font-size:clamp(20px,3vw,32px);margin:0;}
+  .meta{opacity:.75;}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr);}
+  .card{grid-column:span 4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:20px;}
+  .value{font-size:clamp(28px,6vw,48px);font-weight:800;}
+  .panel{grid-column:span 12;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:20px;}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+  button{background:#1e293b;color:#e6ecff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;}
+  button.active{background:#2563eb;color:#fff;}
+  select{background:#0f172a;color:#e6ecff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 10px;}
+  /* キャンバスは常に固定高の箱の中で描画させる */
+  .chart-wrap{position:relative;height:360px;width:100%;overflow:hidden;}
+  #chart{display:block;width:100%!important;height:100%!important;}
+  /* カスタム凡例（キャンバス外） */
+  .legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 4px 0;}
+  .legend .key{display:inline-flex;gap:8px;align-items:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:6px 10px;}
+  .dot{width:12px;height:12px;border-radius:50%;}
+  .dot.cloud{background:#3b82f6;}
+  .dot.zt{background:#10b981;}
+  .dot.inc{background:#ef4444;}
+  footer{opacity:.7;margin-top:24px;font-size:.9rem;}
 </style>
 </head>
 <body>
@@ -37,6 +45,7 @@ select{background:#0f172a;color:#e6ecff;border:1px solid rgba(255,255,255,.2);bo
 
 <section class="panel">
   <h2 style="margin-top:0">可視化</h2>
+
   <div class="toolbar">
     <button id="btnLine" class="active">折れ線</button>
     <button id="btnBar">棒</button>
@@ -44,112 +53,121 @@ select{background:#0f172a;color:#e6ecff;border:1px solid rgba(255,255,255,.2);bo
     <label for="yearSelect" style="margin-left:8px;">年度:</label>
     <select id="yearSelect" disabled></select>
   </div>
-  <div class="chart-wrap"><canvas id="chart"></canvas></div>
+
+  <!-- ★ キャンバス外のHTML凡例（色と項目対応を明示） -->
+  <div class="legend" id="legend">
+    <span class="key"><span class="dot cloud"></span>クラウド普及率</span>
+    <span class="key"><span class="dot zt"></span>ゼロトラスト導入率</span>
+    <span class="key"><span class="dot inc"></span>インシデント経験企業割合</span>
+  </div>
+
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
 </section>
 
 <footer>
-出典：総務省 / IPA / NRI Secure<br/>表示値は Google スプレッドシート（gid固定）から取得しています。
+  出典：総務省 / IPA / NRI Secure<br/>
+  表示値は Google スプレッドシート（gid固定）から取得しています。
 </footer>
 
 <script>
-const SPREADSHEET_ID="1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
-const KPI_GID=0, TREND_GID=709246046;
-let chart; let years=[],cloud=[],zt=[],inc=[];
-const yearSelect=document.getElementById("yearSelect");
+  const SPREADSHEET_ID="1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
+  const KPI_GID=0, TREND_GID=709246046;
 
-// 統一カラーパレット
-const COLORS={
-  cloud:"#3b82f6",   // 青
-  zt:"#10b981",      // 緑
-  inc:"#ef4444"      // 赤
-};
+  let chart; let years=[],cloud=[],zt=[],inc=[];
+  const yearSelect=document.getElementById("yearSelect");
 
-const csvUrl=gid=>`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
-async function fetchCsv(url){const res=await fetch(url,{cache:"no-store"});const text=await res.text();return text.trim().split(/\r?\n/).map(r=>r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));}
+  // カラー（グラフ本体はこの色、凡例はHTML側で同色を使用）
+  const COLORS={ cloud:"#3b82f6", zt:"#10b981", inc:"#ef4444" };
 
-function toPct(v){const n=Number(v);if(isNaN(n))return"—%";const val=n<=1?n*100:n;return Math.round(val*10)/10+"%";}
-function norm(a){return a.map(v=>v<=1?v*100:v);}
-function setLastUpdated(){const d=new Date();const z=n=>String(n).padStart(2,"0");document.getElementById("lastUpdated").textContent=`最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;}
+  const csvUrl=gid=>`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
+  async function fetchCsv(url){const res=await fetch(url,{cache:"no-store"});const text=await res.text();return text.trim().split(/\r?\n/).map(r=>r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));}
 
-async function loadKpi(){
-  const rows=await fetchCsv(csvUrl(KPI_GID));
-  for(let i=1;i<rows.length;i++){
-    const name=(rows[i][0]||"").toLowerCase();const val=rows[i][1];
-    if(name.includes("cloud")||name.includes("クラウド"))document.getElementById("cloudVal").textContent=toPct(val);
-    else if(name.includes("zero")||name.includes("zt")||name.includes("ゼロ"))document.getElementById("ztVal").textContent=toPct(val);
-    else if(name.includes("incident")||name.includes("被害")||name.includes("インシデント"))document.getElementById("incVal").textContent=toPct(val);
+  function toPct(v){const n=Number(v);if(isNaN(n))return"—%";const val=n<=1?n*100:n;return Math.round(val*10)/10+"%";}
+  function norm(a){return a.map(v=>v<=1?v*100:v);}
+  function setLastUpdated(){const d=new Date();const z=n=>String(n).padStart(2,"0");document.getElementById("lastUpdated").textContent=`最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;}
+
+  async function loadKpi(){
+    const rows=await fetchCsv(csvUrl(KPI_GID));
+    for(let i=1;i<rows.length;i++){
+      const name=(rows[i][0]||"").toLowerCase();const val=rows[i][1];
+      if(name.includes("cloud")||name.includes("クラウド"))document.getElementById("cloudVal").textContent=toPct(val);
+      else if(name.includes("zero")||name.includes("zt")||name.includes("ゼロ"))document.getElementById("ztVal").textContent=toPct(val);
+      else if(name.includes("incident")||name.includes("被害")||name.includes("インシデント"))document.getElementById("incVal").textContent=toPct(val);
+    }
   }
-}
 
-async function loadTrend(){
-  const rows=await fetchCsv(csvUrl(TREND_GID));
-  years=[];cloud=[];zt=[];inc=[];
-  for(let i=1;i<rows.length;i++){
-    if(!rows[i][0])continue;
-    years.push(rows[i][0]);cloud.push(Number(rows[i][1]||0));zt.push(Number(rows[i][2]||0));inc.push(Number(rows[i][3]||0));
+  async function loadTrend(){
+    const rows=await fetchCsv(csvUrl(TREND_GID));
+    years=[];cloud=[];zt=[];inc=[];
+    for(let i=1;i<rows.length;i++){
+      if(!rows[i][0])continue;
+      years.push(rows[i][0]);cloud.push(Number(rows[i][1]||0));zt.push(Number(rows[i][2]||0));inc.push(Number(rows[i][3]||0));
+    }
+    // 年度プルダウン
+    yearSelect.innerHTML="";
+    years.forEach(y=>{const o=document.createElement("option");o.value=y;o.textContent=y;yearSelect.appendChild(o);});
+    yearSelect.value=years[years.length-1];
   }
-  yearSelect.innerHTML="";
-  years.forEach(y=>{const opt=document.createElement("option");opt.value=y;opt.textContent=y;yearSelect.appendChild(opt);});
-  yearSelect.value=years[years.length-1];
-}
 
-function renderChart(type="line"){
-  if(chart)chart.destroy();
-  if(type==="pie"){
-    const y=yearSelect.value;const idx=years.indexOf(y);
-    const dataY=[(idx>-1?cloud[idx]:0),(idx>-1?zt[idx]:0),(idx>-1?inc[idx]:0)];
-    chart=new Chart(document.getElementById("chart"),{
-      type:"pie",
-      data:{
-        labels:["クラウド普及率","ゼロトラスト導入率","インシデント経験企業割合"],
-        datasets:[{data:norm(dataY),backgroundColor:[COLORS.cloud,COLORS.zt,COLORS.inc],borderColor:"#0b1020"}]
-      },
-      options:{
-        responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:"right",labels:{color:"#e6ecff",boxWidth:14}}}
-      }
+  function renderChart(type="line"){
+    if(chart) chart.destroy();
+
+    // Chart.js 内蔵凡例は完全OFF（改行→高さ拡張を防止）
+    const baseOptions = {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } }
+    };
+
+    if(type==="pie"){
+      const y=yearSelect.value; const idx=years.indexOf(y);
+      const dataY=[(idx>-1?cloud[idx]:0),(idx>-1?zt[idx]:0),(idx>-1?inc[idx]:0)];
+      chart=new Chart(document.getElementById("chart"),{
+        type:"pie",
+        data:{
+          labels:["クラウド普及率","ゼロトラスト導入率","インシデント経験企業割合"],
+          datasets:[{ data:norm(dataY), backgroundColor:[COLORS.cloud,COLORS.zt,COLORS.inc], borderColor:"#0b1020" }]
+        },
+        options: baseOptions
+      });
+      yearSelect.disabled=false;
+    }else{
+      const datasets=[
+        {label:"クラウド普及率",data:norm(cloud),borderColor:COLORS.cloud,backgroundColor:COLORS.cloud+"80",borderWidth:2,tension:.3},
+        {label:"ゼロトラスト導入率",data:norm(zt),borderColor:COLORS.zt,backgroundColor:COLORS.zt+"80",borderWidth:2,tension:.3},
+        {label:"インシデント経験企業割合",data:norm(inc),borderColor:COLORS.inc,backgroundColor:COLORS.inc+"80",borderWidth:2,tension:.3}
+      ];
+      chart=new Chart(document.getElementById("chart"),{
+        type,
+        data:{ labels:years, datasets },
+        options:{ ...baseOptions, scales:{ y:{ min:0, max:100, ticks:{ stepSize:20 } } } }
+      });
+      yearSelect.disabled=true;
+    }
+  }
+
+  function setupUI(){
+    const buttons={btnLine:"line",btnBar:"bar",btnPie:"pie"};
+    for(const[id,type] of Object.entries(buttons)){
+      document.getElementById(id).addEventListener("click",()=>{
+        document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+        renderChart(type);
+      });
+    }
+    yearSelect.addEventListener("change",()=>{
+      if(document.getElementById("btnPie").classList.contains("active")) renderChart("pie");
     });
-    yearSelect.disabled=false;
-  }else{
-    const datasets=[
-      {label:"クラウド普及率",data:norm(cloud),borderColor:COLORS.cloud,backgroundColor:COLORS.cloud+"80",borderWidth:2,tension:.3},
-      {label:"ゼロトラスト導入率",data:norm(zt),borderColor:COLORS.zt,backgroundColor:COLORS.zt+"80",borderWidth:2,tension:.3},
-      {label:"インシデント経験企業割合",data:norm(inc),borderColor:COLORS.inc,backgroundColor:COLORS.inc+"80",borderWidth:2,tension:.3}
-    ];
-    chart=new Chart(document.getElementById("chart"),{
-      type,
-      data:{labels:years,datasets},
-      options:{
-        responsive:true,maintainAspectRatio:false,
-        scales:{y:{min:0,max:100,ticks:{stepSize:20}}},
-        plugins:{legend:{position:"right",labels:{color:"#e6ecff"}}}
-      }
-    });
-    yearSelect.disabled=true;
   }
-}
 
-function setupUI(){
-  const buttons={btnLine:"line",btnBar:"bar",btnPie:"pie"};
-  for(const[id,type]of Object.entries(buttons)){
-    document.getElementById(id).addEventListener("click",()=>{
-      document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
-      document.getElementById(id).classList.add("active");
-      renderChart(type);
-    });
-  }
-  yearSelect.addEventListener("change",()=>{
-    if(document.getElementById("btnPie").classList.contains("active"))renderChart("pie");
-  });
-}
-
-(async function init(){
-  setLastUpdated();
-  await loadKpi();
-  await loadTrend();
-  setupUI();
-  renderChart("line");
-})();
+  (async function init(){
+    setLastUpdated();
+    await loadKpi();
+    await loadTrend();
+    setupUI();
+    renderChart("line");
+  })();
 </script>
 </body>
 </html>
