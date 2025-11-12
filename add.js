@@ -1,7 +1,9 @@
 // ====== 設定 ======
+// ====== 設定 ======
 const SPREADSHEET_ID = "1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
 const KPI_GID = 0;
 const TREND_GID = 709246046;
+
 const COLORS = { cloud:"#3b82f6", zt:"#10b981", inc:"#ef4444", rest:"#64748b" };
 
 // DOM
@@ -27,23 +29,27 @@ function toast(msg){
 const csvUrlPrimary   = gid => `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}&cb=${Date.now()}`;
 const csvUrlFallback  = gid => `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?gid=${gid}&tqx=out:csv&cb=${Date.now()}`;
 
-async function fetchCsvWithFallback(gid){
-  const urls = [csvUrlPrimary(gid), csvUrlFallback(gid)];
+async function fetchCsvWithFallback(gid, publishedUrl){
+  const urls = [
+    publishedUrl ? `${publishedUrl}&cb=${Date.now()}` : null,                              // 公開CSV（最優先）
+    `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}&cb=${Date.now()}`, // export?
+    `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?gid=${gid}&tqx=out:csv&cb=${Date.now()}` // gviz
+  ].filter(Boolean);
+
   let lastErr = null;
-  for(const url of urls){
+  for (const url of urls){
     try{
-      const res = await fetch(url, { cache:"no-store" });
+      const res = await fetch(url, { cache: "no-store" });
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      // CSV→配列
       const rows = text.trim().split(/\r?\n/).map(r =>
         r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g,""))
       );
-      if(rows.length >= 1) return rows;
+      if (rows.length >= 1) return rows;
       throw new Error("CSV empty");
     }catch(e){
-      lastErr = e;
       console.warn("[fetchCsv fallback]", url, e);
+      lastErr = e;
     }
   }
   throw lastErr || new Error("fetchCsv failed");
@@ -81,7 +87,7 @@ Chart.register(centerLabelPlugin);
 // KPI 読み込み
 async function loadKpi(){
   try{
-    const rows = await fetchCsvWithFallback(KPI_GID);
+    const rows = await fetchCsvWithFallback(KPI_GID, KPI_CSV_PUBLISHED || null);
     for(let i=1;i<rows.length;i++){
       const name=(rows[i][0]||"").toLowerCase(); const val=rows[i][1];
       if(name.includes("cloud")||name.includes("クラウド")) document.getElementById("cloudVal").textContent = toPct(val);
@@ -97,7 +103,7 @@ async function loadKpi(){
 // Trend 読み込み
 async function loadTrend(){
   try{
-    const rows = await fetchCsvWithFallback(TREND_GID);
+    const rows = await fetchCsvWithFallback(TREND_GID, TREND_CSV_PUBLISHED || null);
     years=[]; cloud=[]; zt=[]; inc=[];
     for(let i=1;i<rows.length;i++){
       if(!rows[i][0]) continue;
