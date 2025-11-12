@@ -3,23 +3,43 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>企業セキュリティ実態ダッシュボード</title>
+  <title>日本企業のセキュリティ実態ダッシュボード</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root { --gap: 16px; }
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", sans-serif; margin: max(2vw,24px); background:#0b1020; color:#f5f7ff; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN",
+                   "Noto Sans JP", "Yu Gothic UI", sans-serif;
+      margin: max(2vw,24px);
+      background:#0b1020;
+      color:#f5f7ff;
+    }
     header { display:flex; flex-wrap:wrap; gap: var(--gap); align-items:baseline; justify-content:space-between; }
     h1 { font-size: clamp(20px, 3vw, 32px); margin:0; letter-spacing:.02em; }
-    .meta { opacity:.7; }
+    .meta { opacity:.75; }
     .grid { display:grid; gap: var(--gap); grid-template-columns: repeat(12, 1fr); }
-    .card { grid-column: span 4; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); border:1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 20px; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+    .card {
+      grid-column: span 4;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.1);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.25);
+    }
     .kpi { display:flex; align-items:baseline; gap:8px; }
     .kpi .value { font-size: clamp(28px, 6vw, 48px); font-weight:800; line-height:1; }
-    .kpi small { opacity:.8; }
-    .panel { grid-column: span 12; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 20px; }
+    .kpi small { opacity:.85; }
+    .panel {
+      grid-column: span 12;
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius: 16px;
+      padding: 20px;
+      height: 420px;
+    }
     a { color:#9bd2ff; }
-    footer { margin-top: 24px; opacity:.7; font-size:.9rem; }
-    @media (max-width: 900px){ .card{ grid-column: span 12; } }
+    footer { margin-top: 24px; opacity:.75; font-size:.9rem; }
+    @media (max-width: 900px){ .card{ grid-column: span 12; } .panel{ height: 360px; } }
   </style>
 </head>
 <body>
@@ -51,112 +71,102 @@
 
   <section class="panel">
     <h2 style="margin-top:0">年度トレンド</h2>
-    <canvas id="trendChart" height="120"></canvas>
+    <canvas id="trendChart" height="260"></canvas>
   </section>
 
   <footer>
-    出典：総務省（通信利用動向調査） / IPA（中小企業における情報セキュリティ実態調査） / NRI Secure 等（ページ下部のスプレッドシートを参照）<br/>
-    表示値は Google スプレッドシートの公開CSV（gviz）から毎回取得します。
+    出典：総務省（通信利用動向調査） / IPA（中小企業における情報セキュリティ実態調査） / NRI Secure ほか<br/>
+    表示値は Google スプレッドシートの公開CSV（gid固定）から毎回取得します。
   </footer>
 
 <script>
 /** ▼▼▼ 必要箇所だけ編集ください ▼▼▼ **/
-// 公開状態のスプレッドシートID（URLの /d/ と /edit の間の文字列）に差し替え
 const SPREADSHEET_ID = "1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
-
-// KPI シート（A:B）: A列=KPI名, B列=値（0-1 または 0-100）
-// 例: A2=Cloud, B2=0.80 / A3=ZeroTrust, B3=0.20 / A4=Incident, B4=0.23
-const KPI_SHEET = "KPI";
-const KPI_RANGE = "A1:B10";
-
-// Trend シート: A列=年度, B=Cloud, C=ZeroTrust, D=Incident（%表記 or 0-1）
-const TREND_SHEET = "Trend";
-const TREND_RANGE = "A1:D20";
-
+// KPI = gid:0、Trend = gid:709246046
+const KPI_GID   = 0;
+const TREND_GID = 709246046;
 /** ▲▲▲ 編集ここまで ▲▲▲ **/
 
-// gviz CSV エンドポイントを生成
-function gvizCsvUrl(sheet, range){
-  return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}&range=${encodeURIComponent(range)}`;
+// CSVエンドポイント（gid指定）
+function exportCsvUrl(gid){
+  return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
 }
 
-// CSV を配列に変換
+// CSV→2次元配列
 async function fetchCsv(url){
   const res = await fetch(url, { cache: "no-store" });
   if(!res.ok) throw new Error("Failed to fetch: " + url);
   const text = await res.text();
-  return text.trim().split(/\r?\n/).map(r => r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, "")));
+  return text.trim().split(/\r?\n/).map(r =>
+    r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, ""))
+  );
 }
 
-// 値（0-1 or 0-100）を百分率表示へ
+// 0〜1 or 0〜100 → “xx.x%”
 function toPct(v){
   const num = Number(v);
   if(Number.isNaN(num)) return "—%";
-  // 1以下なら100倍、100以上ならそのまま、他は丸めて表示
   const val = num <= 1 ? num * 100 : num;
   return Math.round(val * 10) / 10 + "%";
 }
 
-// 日付表示
+// 最終更新の表示
 function setLastUpdated(){
   const d = new Date();
-  const pad = n => String(n).padStart(2, "0");
-  const s = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  document.getElementById("lastUpdated").textContent = "最終更新: " + s;
+  const z = (n)=>String(n).padStart(2,"0");
+  document.getElementById("lastUpdated").textContent =
+    `最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
 }
 
+// KPIの読み込み：KPI（gid=0）想定：A=Name, B=Value（0〜1 または 0〜100）
 async function loadKpis(){
-  const rows = await fetchCsv(gvizCsvUrl(KPI_SHEET, KPI_RANGE));
+  const rows = await fetchCsv(exportCsvUrl(KPI_GID));
   // 1行目はヘッダー想定
-  const header = rows[0].map(h => h.toLowerCase());
   for(let i=1;i<rows.length;i++){
-    const r = rows[i];
-    const name = (r[0]||"").toLowerCase();
-    const val = r[1];
-    if(name.includes("cloud")){
+    const name = (rows[i][0]||"").toLowerCase();
+    const val  = rows[i][1];
+    if(name.includes("cloud") || name.includes("クラウド")){
       document.getElementById("cloudVal").textContent = toPct(val);
-    }else if(name.includes("zero") || name.includes("zt")){
+    }else if(name.includes("zero") || name.includes("zt") || name.includes("ゼロ")){
       document.getElementById("ztVal").textContent = toPct(val);
-    }else if(name.includes("incident") || name.includes("被害")){
+    }else if(name.includes("incident") || name.includes("被害") || name.includes("インシデント")){
       document.getElementById("incVal").textContent = toPct(val);
     }
   }
 }
 
+// Trendの読み込み：Trend（gid=709246046）
+// ヘッダー: Year, Cloud, ZeroTrust, Incident（値は 0〜1 or 0〜100）
 async function loadTrend(){
-  const rows = await fetchCsv(gvizCsvUrl(TREND_SHEET, TREND_RANGE));
-  // ヘッダー: 年度, Cloud, ZeroTrust, Incident
-  const years = [];
-  const cloud = [], zt = [], inc = [];
+  const rows = await fetchCsv(exportCsvUrl(TREND_GID));
+  const years=[], cloud=[], zt=[], inc=[];
   for(let i=1;i<rows.length;i++){
-    const y = rows[i][0];
-    if(!y) continue;
+    if(!rows[i][0]) continue;
     years.push(rows[i][0]);
     cloud.push(Number(rows[i][1]||0));
     zt.push(Number(rows[i][2]||0));
     inc.push(Number(rows[i][3]||0));
   }
-  // 1以下なら%換算
-  const norm = arr => arr.map(v => (v <= 1 ? v*100 : v));
-  const data = {
-    labels: years,
-    datasets: [
-      { label: "クラウド普及率", data: norm(cloud), borderWidth: 2, tension:.3 },
-      { label: "ゼロトラスト導入率", data: norm(zt), borderWidth: 2, tension:.3 },
-      { label: "インシデント経験企業割合", data: norm(inc), borderWidth: 2, tension:.3 }
-    ]
-  };
+  const norm = a => a.map(v => (v<=1? v*100 : v));
+
   const ctx = document.getElementById("trendChart");
   new Chart(ctx, {
     type: "line",
-    data,
+    data: {
+      labels: years,
+      datasets: [
+        { label:"クラウド普及率", data:norm(cloud), borderWidth:2, tension:.3 },
+        { label:"ゼロトラスト導入率", data:norm(zt),    borderWidth:2, tension:.3 },
+        { label:"インシデント経験企業割合", data:norm(inc),  borderWidth:2, tension:.3 },
+      ]
+    },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: { y: { min: 0, max: 100, ticks: { stepSize: 20 } } },
-      plugins: {
-        legend: { labels: { color: "#e6ecff" } }
-      }
+      responsive:true,
+      maintainAspectRatio:false,
+      scales:{ y:{ min:0, max:100, ticks:{ stepSize:20 }, grid:{ color:"rgba(230,236,255,.12)" } },
+               x:{ grid:{ color:"rgba(230,236,255,.08)" } } },
+      plugins:{ legend:{ labels:{ color:"#e6ecff" } } },
+      elements:{ point:{ radius:3 } }
     }
   });
 }
