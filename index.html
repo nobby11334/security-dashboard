@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>企業セキュリティ実態ダッシュボード</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --gap: 16px; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", sans-serif; margin: max(2vw,24px); background:#0b1020; color:#f5f7ff; }
+    header { display:flex; flex-wrap:wrap; gap: var(--gap); align-items:baseline; justify-content:space-between; }
+    h1 { font-size: clamp(20px, 3vw, 32px); margin:0; letter-spacing:.02em; }
+    .meta { opacity:.7; }
+    .grid { display:grid; gap: var(--gap); grid-template-columns: repeat(12, 1fr); }
+    .card { grid-column: span 4; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); border:1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 20px; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+    .kpi { display:flex; align-items:baseline; gap:8px; }
+    .kpi .value { font-size: clamp(28px, 6vw, 48px); font-weight:800; line-height:1; }
+    .kpi small { opacity:.8; }
+    .panel { grid-column: span 12; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 20px; }
+    a { color:#9bd2ff; }
+    footer { margin-top: 24px; opacity:.7; font-size:.9rem; }
+    @media (max-width: 900px){ .card{ grid-column: span 12; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>日本企業のセキュリティ実態ダッシュボード</h1>
+    <div class="meta" id="lastUpdated">最終更新: —</div>
+  </header>
+
+  <section class="grid" id="kpiRow">
+    <div class="card" id="kpiCloud">
+      <div class="kpi">
+        <div class="value" id="cloudVal">—%</div>
+      </div>
+      <small>クラウド普及率</small>
+    </div>
+    <div class="card" id="kpiZeroTrust">
+      <div class="kpi">
+        <div class="value" id="ztVal">—%</div>
+      </div>
+      <small>ゼロトラスト導入率</small>
+    </div>
+    <div class="card" id="kpiIncident">
+      <div class="kpi">
+        <div class="value" id="incVal">—%</div>
+      </div>
+      <small>インシデント経験企業割合</small>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 style="margin-top:0">年度トレンド</h2>
+    <canvas id="trendChart" height="120"></canvas>
+  </section>
+
+  <footer>
+    出典：総務省（通信利用動向調査） / IPA（中小企業における情報セキュリティ実態調査） / NRI Secure 等（ページ下部のスプレッドシートを参照）<br/>
+    表示値は Google スプレッドシートの公開CSV（gviz）から毎回取得します。
+  </footer>
+
+<script>
+/** ▼▼▼ 必要箇所だけ編集ください ▼▼▼ **/
+// 公開状態のスプレッドシートID（URLの /d/ と /edit の間の文字列）に差し替え
+const SPREADSHEET_ID = "1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
+
+// KPI シート（A:B）: A列=KPI名, B列=値（0-1 または 0-100）
+// 例: A2=Cloud, B2=0.80 / A3=ZeroTrust, B3=0.20 / A4=Incident, B4=0.23
+const KPI_SHEET = "KPI";
+const KPI_RANGE = "A1:B10";
+
+// Trend シート: A列=年度, B=Cloud, C=ZeroTrust, D=Incident（%表記 or 0-1）
+const TREND_SHEET = "Trend";
+const TREND_RANGE = "A1:D20";
+
+/** ▲▲▲ 編集ここまで ▲▲▲ **/
+
+// gviz CSV エンドポイントを生成
+function gvizCsvUrl(sheet, range){
+  return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}&range=${encodeURIComponent(range)}`;
+}
+
+// CSV を配列に変換
+async function fetchCsv(url){
+  const res = await fetch(url, { cache: "no-store" });
+  if(!res.ok) throw new Error("Failed to fetch: " + url);
+  const text = await res.text();
+  return text.trim().split(/\r?\n/).map(r => r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, "")));
+}
+
+// 値（0-1 or 0-100）を百分率表示へ
+function toPct(v){
+  const num = Number(v);
+  if(Number.isNaN(num)) return "—%";
+  // 1以下なら100倍、100以上ならそのまま、他は丸めて表示
+  const val = num <= 1 ? num * 100 : num;
+  return Math.round(val * 10) / 10 + "%";
+}
+
+// 日付表示
+function setLastUpdated(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const s = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  document.getElementById("lastUpdated").textContent = "最終更新: " + s;
+}
+
+async function loadKpis(){
+  const rows = await fetchCsv(gvizCsvUrl(KPI_SHEET, KPI_RANGE));
+  // 1行目はヘッダー想定
+  const header = rows[0].map(h => h.toLowerCase());
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i];
+    const name = (r[0]||"").toLowerCase();
+    const val = r[1];
+    if(name.includes("cloud")){
+      document.getElementById("cloudVal").textContent = toPct(val);
+    }else if(name.includes("zero") || name.includes("zt")){
+      document.getElementById("ztVal").textContent = toPct(val);
+    }else if(name.includes("incident") || name.includes("被害")){
+      document.getElementById("incVal").textContent = toPct(val);
+    }
+  }
+}
+
+async function loadTrend(){
+  const rows = await fetchCsv(gvizCsvUrl(TREND_SHEET, TREND_RANGE));
+  // ヘッダー: 年度, Cloud, ZeroTrust, Incident
+  const years = [];
+  const cloud = [], zt = [], inc = [];
+  for(let i=1;i<rows.length;i++){
+    const y = rows[i][0];
+    if(!y) continue;
+    years.push(rows[i][0]);
+    cloud.push(Number(rows[i][1]||0));
+    zt.push(Number(rows[i][2]||0));
+    inc.push(Number(rows[i][3]||0));
+  }
+  // 1以下なら%換算
+  const norm = arr => arr.map(v => (v <= 1 ? v*100 : v));
+  const data = {
+    labels: years,
+    datasets: [
+      { label: "クラウド普及率", data: norm(cloud), borderWidth: 2, tension:.3 },
+      { label: "ゼロトラスト導入率", data: norm(zt), borderWidth: 2, tension:.3 },
+      { label: "インシデント経験企業割合", data: norm(inc), borderWidth: 2, tension:.3 }
+    ]
+  };
+  const ctx = document.getElementById("trendChart");
+  new Chart(ctx, {
+    type: "line",
+    data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { min: 0, max: 100, ticks: { stepSize: 20 } } },
+      plugins: {
+        legend: { labels: { color: "#e6ecff" } }
+      }
+    }
+  });
+}
+
+(async function init(){
+  setLastUpdated();
+  await Promise.all([loadKpis(), loadTrend()]);
+})();
+</script>
+</body>
+</html>
