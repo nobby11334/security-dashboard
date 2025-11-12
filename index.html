@@ -1,209 +1,68 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>日本企業のクラウド導入・ゼロトラスト導入・インシデント経験の実態</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-  body{font-family:"Noto Sans JP",system-ui;background:#0b1020;color:#f5f7ff;margin:max(2vw,24px);}
-  header{display:flex;justify-content:space-between;flex-wrap:wrap;align-items:baseline;}
-  h1{font-size:clamp(20px,3vw,32px);margin:0;}
-  .meta{opacity:.75;}
-  .grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr);}
-  .card{grid-column:span 4;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:20px;}
-  .value{font-size:clamp(28px,6vw,48px);font-weight:800;}
-  .panel{grid-column:span 12;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:20px;}
-  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
-  button{background:#1e293b;color:#e6ecff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;}
-  button.active{background:#2563eb;color:#fff;}
-  select{background:#0f172a;color:#e6ecff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 10px;}
-  /* 折れ線・棒 用の単一キャンバス領域（固定高） */
-  .chart-wrap{position:relative;height:360px;width:100%;overflow:hidden;}
-  #chart{display:block;width:100%!important;height:100%!important;}
-  /* 円グラフ 3枚のレイアウト（カード風） */
-  .pies{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
-  .pie-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:12px 12px 8px;}
-  .pie-title{font-weight:700;margin:0 0 4px 2px;font-size:0.95rem;opacity:.9;}
-  .pie-canvas{position:relative;height:220px;}
-  .pie-canvas canvas{display:block;width:100%!important;height:100%!important;}
-  @media (max-width: 900px){ .pies{grid-template-columns:1fr;} .pie-canvas{height:260px;} }
-  /* カスタム凡例（キャンバス外固定） */
-  .legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 4px 0;}
-  .legend .key{display:inline-flex;gap:8px;align-items:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:6px 10px;}
-  .dot{width:12px;height:12px;border-radius:50%;}
-  .dot.cloud{background:#3b82f6;}
-  .dot.zt{background:#10b981;}
-  .dot.inc{background:#ef4444;}
-  .dot.rest{background:#64748b;} /* 残り（非該当） */
-  footer{opacity:.7;margin-top:24px;font-size:.9rem;}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>企業のセキュリティ動向を可視化するダッシュボード</title>
+  <link rel="stylesheet" href="styles.css?v=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-<header>
-  <h1>日本企業のクラウド導入・ゼロトラスト導入・インシデント経験の実態</h1>
-  <div class="meta" id="lastUpdated">最終更新: —</div>
-</header>
+  <header>
+    <h1>企業のセキュリティ動向を可視化するダッシュボード</h1>
+    <p class="subtitle">日本企業のクラウド導入率・ゼロトラスト導入率・インシデント経験率</p>
+    <div class="meta" id="lastUpdated">最終更新: —</div>
+  </header>
 
-<section class="grid">
-  <div class="card"><div class="value" id="cloudVal">—%</div><small>クラウド普及率</small></div>
-  <div class="card"><div class="value" id="ztVal">—%</div><small>ゼロトラスト導入率</small></div>
-  <div class="card"><div class="value" id="incVal">—%</div><small>インシデント経験企業割合</small></div>
-</section>
+  <section class="grid">
+    <div class="card"><div class="value" id="cloudVal">—%</div><small>クラウド普及率</small></div>
+    <div class="card"><div class="value" id="ztVal">—%</div><small>ゼロトラスト導入率</small></div>
+    <div class="card"><div class="value" id="incVal">—%</div><small>インシデント経験企業割合</small></div>
+  </section>
 
-<section class="panel">
-  <h2 style="margin-top:0">可視化</h2>
+  <section class="panel">
+    <h2 style="margin-top:0">可視化</h2>
 
-  <div class="toolbar">
-    <button id="btnLine" class="active">折れ線</button>
-    <button id="btnBar">棒</button>
-    <button id="btnPie">円（年度スナップショット ×3）</button>
-    <label for="yearSelect" style="margin-left:8px;">年度:</label>
-    <select id="yearSelect" disabled></select>
-  </div>
-
-  <!-- カスタム凡例（色と項目対応を明示） -->
-  <div class="legend" id="legend">
-    <span class="key"><span class="dot cloud"></span>該当（クラウド／ゼロトラスト／インシデント）</span>
-    <span class="key"><span class="dot rest"></span>非該当（100%からの残り）</span>
-  </div>
-
-  <!-- 折れ線・棒 グラフ領域 -->
-  <div class="chart-wrap" id="wrapSeries">
-    <canvas id="chart"></canvas>
-  </div>
-
-  <!-- 円グラフ 3枚の領域（初期は非表示） -->
-  <div class="pies" id="wrapPies" style="display:none;">
-    <div class="pie-card">
-      <p class="pie-title">クラウド普及率</p>
-      <div class="pie-canvas"><canvas id="pieCloud"></canvas></div>
+    <div class="toolbar">
+      <button id="btnLine" class="active">折れ線</button>
+      <button id="btnBar">棒</button>
+      <button id="btnPie">円（年度スナップショット ×3）</button>
+      <label for="yearSelect" style="margin-left:8px;">年度:</label>
+      <select id="yearSelect" disabled></select>
     </div>
-    <div class="pie-card">
-      <p class="pie-title">ゼロトラスト導入率</p>
-      <div class="pie-canvas"><canvas id="pieZT"></canvas></div>
+
+    <div class="legend" id="legend">
+      <span class="key"><span class="dot cloud"></span>該当（クラウド／ゼロトラスト／インシデント）</span>
+      <span class="key"><span class="dot rest"></span>非該当（100%からの残り）</span>
     </div>
-    <div class="pie-card">
-      <p class="pie-title">インシデント経験企業割合</p>
-      <div class="pie-canvas"><canvas id="pieInc"></canvas></div>
+
+    <!-- 折れ線・棒 -->
+    <div class="chart-wrap" id="wrapSeries">
+      <canvas id="chart"></canvas>
     </div>
-  </div>
-</section>
 
-<footer>
-  出典：総務省 / IPA / NRI Secure<br/>
-  表示値は Google スプレッドシート（gid固定）から取得しています。
-</footer>
+    <!-- 円グラフ3枚 -->
+    <div class="pies" id="wrapPies" style="display:none;">
+      <div class="pie-card">
+        <p class="pie-title">クラウド普及率</p>
+        <div class="pie-canvas"><canvas id="pieCloud"></canvas></div>
+      </div>
+      <div class="pie-card">
+        <p class="pie-title">ゼロトラスト導入率</p>
+        <div class="pie-canvas"><canvas id="pieZT"></canvas></div>
+      </div>
+      <div class="pie-card">
+        <p class="pie-title">インシデント経験企業割合</p>
+        <div class="pie-canvas"><canvas id="pieInc"></canvas></div>
+      </div>
+    </div>
+  </section>
 
-<script>
-  const SPREADSHEET_ID="1yMlH-3wYk_ZJp1r--Fin1yKkDCJarlIZ_pAaaFlmbxM";
-  const KPI_GID=0, TREND_GID=709246046;
+  <footer>
+    出典：総務省 / IPA / NRI Secure<br/>
+    表示値は Google スプレッドシート（gid固定）から取得しています。
+  </footer>
 
-  // 統一カラー
-  const COLORS={ cloud:"#3b82f6", zt:"#10b981", inc:"#ef4444", rest:"#64748b" };
-
-  let chartLineBar; // 折れ線・棒 用
-  let pieCloud, pieZT, pieInc; // 3つの円
-  let years=[], cloud=[], zt=[], inc=[];
-  const yearSelect=document.getElementById("yearSelect");
-  const wrapSeries=document.getElementById("wrapSeries");
-  const wrapPies=document.getElementById("wrapPies");
-
-  const csvUrl=gid=>`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
-  async function fetchCsv(url){const res=await fetch(url,{cache:"no-store"});const text=await res.text();return text.trim().split(/\r?\n/).map(r=>r.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));}
-
-  function toPct(v){const n=Number(v);if(isNaN(n))return"—%";const val=n<=1?n*100:n;return Math.round(val*10)/10+"%";}
-  function norm(a){return a.map(v=>v<=1?v*100:v);}
-  function setLastUpdated(){const d=new Date();const z=n=>String(n).padStart(2,"0");document.getElementById("lastUpdated").textContent=`最終更新: ${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;}
-
-  async function loadKpi(){
-    const rows=await fetchCsv(csvUrl(KPI_GID));
-    for(let i=1;i<rows.length;i++){
-      const name=(rows[i][0]||"").toLowerCase();const val=rows[i][1];
-      if(name.includes("cloud")||name.includes("クラウド"))document.getElementById("cloudVal").textContent=toPct(val);
-      else if(name.includes("zero")||name.includes("zt")||name.includes("ゼロ"))document.getElementById("ztVal").textContent=toPct(val);
-      else if(name.includes("incident")||name.includes("被害")||name.includes("インシデント"))document.getElementById("incVal").textContent=toPct(val);
-    }
-  }
-
-  async function loadTrend(){
-    const rows=await fetchCsv(csvUrl(TREND_GID));
-    years=[];cloud=[];zt=[];inc=[];
-    for(let i=1;i<rows.length;i++){
-      if(!rows[i][0])continue;
-      years.push(rows[i][0]);cloud.push(Number(rows[i][1]||0));zt.push(Number(rows[i][2]||0));inc.push(Number(rows[i][3]||0));
-    }
-    // 年度プルダウン
-    yearSelect.innerHTML="";
-    years.forEach(y=>{const o=document.createElement("option");o.value=y;o.textContent=y;yearSelect.appendChild(o);});
-    yearSelect.value=years[years.length-1];
-  }
-
-  function renderSeries(type="line"){
-    // 内蔵凡例はOFF（外部凡例固定）
-    const options={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{stepSize:20}}}};
-    if(chartLineBar) chartLineBar.destroy();
-    chartLineBar=new Chart(document.getElementById("chart"),{
-      type,
-      data:{
-        labels:years,
-        datasets:[
-          {label:"クラウド普及率",data:norm(cloud),borderColor:COLORS.cloud,backgroundColor:COLORS.cloud+"80",borderWidth:2,tension:.3},
-          {label:"ゼロトラスト導入率",data:norm(zt),borderColor:COLORS.zt,backgroundColor:COLORS.zt+"80",borderWidth:2,tension:.3},
-          {label:"インシデント経験企業割合",data:norm(inc),borderColor:COLORS.inc,backgroundColor:COLORS.inc+"80",borderWidth:2,tension:.3}
-        ]
-      },
-      options
-    });
-  }
-
-  function renderPies(){
-    const y=yearSelect.value; const idx=years.indexOf(y);
-    const vCloud = idx>-1 ? (cloud[idx]<=1?cloud[idx]*100:cloud[idx]) : 0;
-    const vZT    = idx>-1 ? (zt[idx]<=1?zt[idx]*100:zt[idx]) : 0;
-    const vInc   = idx>-1 ? (inc[idx]<=1?inc[idx]*100:inc[idx]) : 0;
-
-    const mkCfg=(val, color)=>({
-      type:"pie",
-      data:{ labels:["該当","非該当"], datasets:[{ data:[val, Math.max(0,100-val)], backgroundColor:[color, COLORS.rest], borderColor:"#0b1020" }] },
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
-    });
-
-    // 既存破棄
-    if(pieCloud) pieCloud.destroy(); if(pieZT) pieZT.destroy(); if(pieInc) pieInc.destroy();
-
-    pieCloud=new Chart(document.getElementById("pieCloud"), mkCfg(vCloud, COLORS.cloud));
-    pieZT   =new Chart(document.getElementById("pieZT"),    mkCfg(vZT,    COLORS.zt));
-    pieInc  =new Chart(document.getElementById("pieInc"),   mkCfg(vInc,   COLORS.inc));
-  }
-
-  function switchMode(mode){
-    const isPie = (mode==="pie");
-    document.getElementById("btnLine").classList.toggle("active", mode==="line");
-    document.getElementById("btnBar").classList.toggle("active",  mode==="bar");
-    document.getElementById("btnPie").classList.toggle("active",  isPie);
-
-    wrapSeries.style.display = isPie ? "none" : "block";
-    wrapPies.style.display   = isPie ? "grid" : "none";
-    yearSelect.disabled      = !isPie;
-
-    if(isPie){ renderPies(); } else { renderSeries(mode); }
-  }
-
-  function setupUI(){
-    document.getElementById("btnLine").addEventListener("click",()=>switchMode("line"));
-    document.getElementById("btnBar").addEventListener("click", ()=>switchMode("bar"));
-    document.getElementById("btnPie").addEventListener("click", ()=>switchMode("pie"));
-    yearSelect.addEventListener("change", ()=>{ if(document.getElementById("btnPie").classList.contains("active")) renderPies(); });
-  }
-
-  (async function init(){
-    setLastUpdated();
-    await loadKpi();
-    await loadTrend();
-    setupUI();
-    switchMode("line"); // 既定は折れ線
-  })();
-</script>
+  <script src="app.js?v=1"></script>
 </body>
 </html>
