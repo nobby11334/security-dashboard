@@ -240,5 +240,5 @@ function setupUI() {
   await loadKpi();
   await loadTrend();
   setupUI();
-  switchMode("line");
+  switchMode("pie"); 
 })();
